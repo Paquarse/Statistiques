@@ -1,0 +1,281 @@
+---
+title: "Cointégration"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "31/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+# clear data & close graphs
+```{r}
+rm(list=ls()) # to clear
+graphics.off() # to close figure
+```
+
+
+# Define the working directory
+```{r}
+setwd("~/Cours M1 MAS/Serie Temporelle Avancés/TD3 Co-intégration")
+```
+
+#-----------------------------------------------------------
+#!         loading package into the R session              !
+#-----------------------------------------------------------
+```{r}
+library(xts)
+library(readxl)
+library(astsa)
+library(ggfortify)
+library(forecast)
+library(fpp2)
+library(gets)
+library(urca)
+```
+
+
+#-----------------------------------------------------------
+#!                 Import and inspect data                 !
+#-----------------------------------------------------------
+# a) Time series data of energy and food prices
+
+```{r}
+Mydata <- read_excel("EnergyFood.xls")
+Mydata$date <- as.Date(as.yearmon(Mydata$date,format = "%YM%m"))
+EnergyFood <- xts(x = Mydata[,2:ncol(Mydata)], order.by = Mydata$date)
+```
+
+
+# b) Plot Energy prices and Food prices within a same graphic using autoplot(). Comment.
+
+```{r}
+autoplot(EnergyFood, facets = FALSE)
+```
+Deux séries dont les dynamiques sont assez proches. Quand on a des séries comme ça, on commence l'analyse de cointégration. S'il n'y a aucune dynamique entre les deux séries, on arrête tout, stationnaliser et faire les trucs des chapitres précédents
+
+# c) Create a scatter-plot with fitted line of Energy prices and Food prices. Comment.
+
+```{r}
+plot(x=coredata(EnergyFood[,1]), y=coredata(EnergyFood[,2]))
+abline(reg=lm(coredata(EnergyFood[,2]) ~ coredata(EnergyFood[,1])), col = "red", lwd=2)
+```
+
+Rappelle : coredata pour prendre la partie des données (et ne pas prendre les dates).
+Dans abline, se rappeller que c'est y ~ x
+
+On remarque une tendance à la hausse entre les deux données. L'allure graphique plus la régression nous indique qu'on peut continuer l'analyse de cointégration
+
+
+# d) Create the logarithm of Energy and Food prices. Call these series lener and lfood, respectively.
+
+Log pour 
+log : stationnarisé en variance 
+difflog : permet d'acoir le taux de croissance permet d'avoir l'élasticité dans la relation de Long Terme 
+
+
+```{r}
+lener <- log(EnergyFood$Energy)
+names(lener) <- "lener"
+lfood <- log(EnergyFood$Food)
+names(lfood) <- "lfood"
+```
+
+
+#---------------------------------------------------------------------------------------
+#!                             Exercice I: Unit root test                             !
+#---------------------------------------------------------------------------------------
+#********************* I) Unit root test of lener ***************************
+# a) Proceed to the unit root test of lener using Zivot-Andrews test. Call this lener_za
+
+```{r}
+lener_za <- ur.za(lener, model="both")
+summary(lener_za)
+plot(lener_za)
+```
+- "du" significatif : Rupture en moyenne
+- "dt" non signification : Pas de rupture en tendance
+- Potentiel break point at position 156 ==> choc prétrolier 1972. Pour trouver la date
+
+```{r}
+index(lener[156])
+```
+
+- Test de RU :
+   * t-stat = -3.7437 > t-tab = - 5.08 ==> On accepte HO ==> Présence de RU avec rupture en      niveau
+
+- Sur le graphique le t-stat est le trait en noir, en vert, bleu, rouge, les t-tab, on peut voir directement que t-stat > t-tab
+- Elle montre également les ruptures. 
+
+Serie Non stationnaire on va la differencier
+
+
+# b) Compute the first difference of lener. Call this dlener.
+```{r}
+dlener <- diff(lener)
+names(dlener) <- "dlener"
+```
+
+
+# c) Proceed to the unit root test of dlener using Zivot-Andrews test. Call this dlener_za.
+
+On peut voir directement que dans la série différencier il n'y a pas de tendance donc dans le nouveau test de Zivot Andrews, on va prendre en compte uniquement la rupture en moyenne 
+
+```{r}
+dlener_za <- ur.za(dlener, model="intercept")
+summary(dlener_za)
+plot(dlener_za)
+```
+- "du" significative : rupture en moyenne
+- Potential break point : 238
+- analyse graphque : pas de RU (t-stat toutes < t-tab)
+
+# d) Given results of unit root test on lener and dlener, what is the order of integration of lener?
+
+Conclusion :
+- lener possède une RU 
+- dlener est stationnaire 
+Ainsi lener est I(1) car il aurait suffit de différencier une fois lener pour la rendre stationnaire
+
+
+#********************* II) Unit root test of lfood ***************************
+# a) Proceed to the unit root test of lfood using Zivot-Andrews test.
+```{r}
+summary(ur.za(lfood, model="both"))
+plot(ur.za(lfood, model="both"))
+```
+- "du" significative : rupture en moyenne
+- "dt" significative : rupture en tendance
+- Potential break point : 251
+- analyse graphque : présence de RU (t-stat toutes > t-tab)
+- Serie Non stationnaire on va la differencier
+
+# b) Compute the first difference of lfood. Call this dlfood.
+```{r}
+dlfood <- diff(lfood)
+plot(dlfood)
+```
+Pas de tendance dans dlfood, so model = "intercept"
+
+# c) Proceed to the unit root test of dlfood using Zivot-Andrews test.
+```{r}
+summary(ur.za(dlfood, model="intercept"))
+plot(ur.za(dlfood, model="intercept"))
+```
+- "du" significative : rupture en moyenne
+- Potential break point : 177
+- analyse graphque : pas de RU (t-stat toutes < t-tab)
+
+# d) Given results of unit root test on lfood and dlfood, what is the order of integration of lfood?
+Conclusion :
+- lfood possède une RU 
+- dlfood est stationnaire 
+Ainsi lfood est I(1) car il aurait suffit de différencier une fois lener pour la rendre stationnaire
+
+
+#---------------------------------------------------------------------------------------
+#!                             Exercice II: Cointegration test                         !
+#---------------------------------------------------------------------------------------
+# a) Proceed to the long-term relationship between lfood and lener. Save this estimation as myols.
+
+C'est la procédure de cointégration. Un important rappelle (! une fois de plus : pour lm on a y en fonction de x soit y ~ x)
+```{r}
+myols <- lm(coredata(lfood) ~ coredata(lener))
+summary(myols)
+```
+Commentaire : 
+log(lfood) = 2.969498 + 0.330796log(lener) + Z(t) avec Z(t) un I(0). Une hausse de 1% de l'energie implique une augmentation de 0.33% du prix de la nourriture.
+C'est un modele de long terme (qui ici est confirmé par la théorie économique)
+
+# b) Save the residuals from the auxiliary regression as "resid_ols". Attribute a class xts to it.
+
+Le test de cointégration consiste à tester la présence de racine untaire sur le résidu du modele estinné. Le xts permet juste de transformer en série temporelle
+
+```{r}
+resid_ols <- xts(residuals(myols),index(lfood))
+```
+
+
+# c) Plot resid_ols. Make comment.
+```{r}
+plot(resid_ols)
+```
+une serie (hormi les grandes phrases) qui tourne autour de 0. 
+Conclusion : c'est une série à priori stationnaire
+
+# d) Proceed to the unit root test of resid_ols using ADF test.
+#    Notice: Critical value of Engle & Yoo: t(EY) = -3.37 at 5% significance level
+
+```{r}
+summary(ur.df(resid_ols, type = "none", lags = 12, selectlags="AIC")) 
+```
+On a sauté des étapes : modèle sans consante (constante dans lm ; déjà pris en compte), ni tendance (graph). Il est capital de revenir au test de ADF pour pouvoir utiliser les statistiques de Engle & Yoo (car il est basé sur la statistique de dickey-fuller)
+
+test-ru = -3.6142 < t(EY) = t(EY) = -3.37  ==> On rejette Ho ==> residu est stationnaire, c'est un I(0)
+
+Conclusion : lfood et lener sont I(1) + combinaison linéaire (resid_ols) est I(0)
+           : ==> Cointégration entre lfood et lener
+
+#---------------------------------------------------------------------------------------
+#!                                   Exercice III: ECM model                          !
+#---------------------------------------------------------------------------------------
+
+# a) Create a time series matrix that contains 12 lags of dlener using lag(). Call this matrix lagdlener.
+On a choisi 12 mois car c'est la dynamique qui existe sur le marché. Important : c'est la série stationnaire dlener qui est utilisée... Donne dlener(t), dlener(t-1), dlener(t-2)...
+
+```{r}
+lagdlener <- lag(dlener, k = 0:12) 
+```
+
+
+# b) Take the lag of order 1 of resid_ols. Call this z1.
+```{r}
+z1 <- lag(resid_ols, k=1)
+```
+
+
+# c) Create database named "datam" that contains dlfood, z1 and lagdlener using merge().
+#    Use na.trim() before storing database to remove NA values.
+
+On va construire une nouvelle base de données 
+```{r}
+datam <- na.trim(merge(dlfood, z1, lagdlener[,2:13]))
+```
+
+
+# d) Use sarima() function to fit the model with 12 lags of dlfood, z1 and 12 lags of dlener.
+```{r}
+sarima(datam[,1], 12, 0, 0, xreg=datam[,2:14])
+```
+Pour dlener : on garde a (t-9) car c'est le seul qui soit significatif (on a pris a 10%)
+Pour dlfood : soit à l'instant (t-1) à 1% ou (t-11) à 10%
+
+# e) Proceed backward to adjust the model given the significance of lags of dlfood and dlener in question d).
+
+```{r}
+sarima(datam[,1], 12, 0, 0, xreg=datam[,2:11])
+```
+
+datam[,2:11] : 11e colonne de datam pour dlner(t-9)
+Résumé :
+coefficients 
+- z(t-1) significatif et negatif==> il y a bien correction d'erreur
+- dlfood(t-1) : significatif
+- dlener(t-9) : significatif
+
+
+
+# f) Show the output of the long-term and short-term specification of the final ECM model. Comment.
+```{r}
+summary(lm(coredata(lfood) ~ coredata(lener))) #Relation de Long Terme 
+sarima(datam[,1], 1, 0, 0, xreg=datam[,2:11]) # Relation de Court terme
+# + mécanisme de correction d'erreur avec le coef de z(t-1) négatif
+```
+
+
+
+
+
+

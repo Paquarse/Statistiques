@@ -1,0 +1,475 @@
+---
+title: "Projet Forecasting"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "2023-04-26"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+# Répertoire de travail
+
+```{r}
+setwd("~/Cours M2 MAS/Forecasting/projet_delvich_ronan")
+```
+
+# Packages
+
+```{r}
+library(xts)
+library(readxl)
+library(astsa)
+library(ggfortify) #autoplot()
+library(forecast)
+library(fpp2)
+library(seasonal) #decomposition de la serie
+library(urca)
+```
+# Importation et transformation en données menstruel
+
+```{r}
+Mydata <- read_excel("data_set.xls", sheet = "FRED Graph")
+Mydata$observation_date <- as.Date(as.yearmon(Mydata$observation_date, format = "%YM%m"))
+Elec_sales <- xts(x = Mydata[,2:ncol(Mydata)], order.by = Mydata$observation_date)
+rm(Mydata)
+```
+
+
+# Visualisation de la série
+
+```{r}
+plot.xts(Elec_sales)
+```
+
+
+```{r}
+boxplot(Elec_sales, horizontal = TRUE, main = "Electricity Sales")
+```
+
+
+```{r}
+lag.plot(Elec_sales, lags = 9, main = "Lagplot de la série temporelle", do.lines = FALSE, diag.col = "red")
+```
+
+
+
+## Distribution de la série 
+
+```{r}
+hist(Elec_sales, probability = TRUE, main = "Electricity Sales", xlab = "")
+curve(dnorm(x, mean=mean(Elec_sales), sd=sd(Elec_sales)), col="darkblue", lwd=2, add=TRUE, yaxt="n")
+lines(density(Elec_sales), lwd = 2, col = "red")
+```
+
+
+```{r}
+# Tracer le QQplot de la serie pour le test de normalité
+qqnorm(Elec_sales, main = "Electricity Sales")
+qqline(Elec_sales, col = "red")
+```
+
+
+# Analyse des caractéristiques
+
+```{r}
+Elec_sales2 <- log(Elec_sales)
+```
+
+
+```{r}
+ts_data <- ts(coredata(Elec_sales2), frequency = 12, start=c(1972,1))
+```
+
+
+```{r}
+rm(Elec_sales, Elec_sales2)
+```
+
+```{r}
+decomposition <- decompose(ts_data)
+```
+
+
+
+```{r}
+par(mfrow=c(3,1))
+plot(decomposition$trend,type="l",main="Tendance",col="dark green", xlab = "Temps", ylab = "")
+plot(decomposition$seasonal,type="l",main="Saisonnière",col="blue", xlab = "Temps", ylab = "")
+plot(decomposition$random,type="l",main="Bruit",col="red", xlab = "Temps", ylab = "")
+```
+
+## Saionnalité
+
+```{r}
+acf2(ts_data)
+```
+
+
+```{r}
+new_serie <- seasonal::seas(ts_data)
+```
+
+```{r}
+plot(new_serie)
+```
+
+
+```{r}
+finale_serie = ts_data-decomposition$seasonal
+rm(decomposition, new_serie)
+```
+
+```{r}
+plot(finale_serie)
+```
+
+
+```{r}
+train_data <- window(finale_serie, start = c(1972, 1), end = c(2018, 12))
+test_data <- window(finale_serie, start = c(2019, 1))
+```
+
+# Analyse
+
+## Méthode 1 : Modèle ARIMA
+
+### Estimation du modèle 
+
+```{r}
+model_arima <- auto.arima(train_data)
+```
+
+### Affichage des prévisions
+
+```{r}
+model_arima%>%
+  forecast(h = length(test_data))%>%
+  autoplot()
+```
+
+
+```{r}
+prevision_arima <- forecast(model_arima, h = length(test_data))
+```
+
+```{r}
+summary(prevision_arima)
+```
+
+```{r}
+plot(test_data, main = "Prévisions ARIMA", ylab = "Valeurs")
+lines(prevision_arima$mean, col = "blue")
+legend("topleft", legend = c("Données réelles", "Prévisions"), col = c("black", "blue"), lty = c(1, 1))
+```
+
+
+```{r}
+checkresiduals(model_arima)
+```
+
+
+
+### Calcul des critères d'informations 
+
+```{r}
+# Calculer les erreurs de prévision
+errors <- test_data - prevision_arima$mean
+```
+
+
+```{r}
+Box.test(errors)
+```
+
+
+```{r}
+model_arima_corrige <- arima(train_data, order = c(5, 1, 1), seasonal = c(2, 0, 0))
+```
+
+
+```{r}
+prevision_arima_corrige <- forecast(model_arima_corrige, h = length(test_data))
+```
+
+```{r}
+checkresiduals(prevision_arima_corrige)
+```
+
+
+```{r}
+Box.test(prevision_arima_corrige)
+```
+
+```{r}
+errors_corrige <- test_data - prevision_arima_corrige$mean
+```
+
+
+
+```{r}
+# Calculer les statistiques d'évaluation de prévision
+ME_ARIMA <- mean(errors_corrige)
+RMSE_ARIMA <- sqrt(mean(errors_corrige^2))
+MAE_ARIMA <- mean(abs(errors_corrige))
+MPE_ARIMA <- mean(errors_corrige / test_data) * 100
+MAPE_ARIMA <- mean(abs(errors_corrige / test_data)) * 100
+```
+
+
+
+```{r}
+# Afficher les statistiques d'évaluation de prévision
+print(paste("RMSE:", RMSE_ARIMA))
+print(paste("MAE:", MAE_ARIMA))
+print(paste("MAPE:", MAPE_ARIMA))
+
+```
+
+
+
+## Methode 2 : lissage exponentille de holt Winters
+
+### Estimation du modèle
+```{r}
+hw_model <- HoltWinters(train_data, seasonal = "additive")
+```
+
+### Affichage des prévisions
+
+```{r}
+hw_model%>%
+  forecast(h = length(test_data))%>%
+  autoplot()
+```
+
+
+
+
+```{r}
+prevision_holt <- forecast(hw_model, h = length(test_data))
+```
+
+```{r}
+plot(test_data, main = "Prévisions Holt Winters", ylab = "Valeurs")
+lines(prevision_holt$mean, col = "blue")
+legend("topleft", legend = c("Données réelles", "Prévisions"), col = c("black", "blue"), lty = c(1, 1))
+```
+
+
+```{r}
+# Calculer les erreurs de prévision
+errors_holt <- test_data - prevision_holt$mean
+```
+
+
+```{r}
+checkresiduals(errors_holt)
+```
+
+```{r}
+Box.test(errors_holt)
+```
+
+
+
+```{r}
+# Calculer les statistiques d'évaluation de prévision
+ME_HOLT_WINTER <- mean(errors_holt)
+RMSE_HOLT_WINTER <- sqrt(mean(errors_holt^2))
+MAE_HOLT_WINTER <- mean(abs(errors_holt))
+MPE_HOLT_WINTER <- mean(errors_holt / test_data) * 100
+MAPE_HOLT_WINTER <- mean(abs(errors_holt / test_data)) * 100
+```
+
+
+
+```{r}
+# Afficher les statistiques d'évaluation de prévision
+print(paste("RMSE:", RMSE_HOLT_WINTER))
+print(paste("MAE:", MAE_HOLT_WINTER))
+print(paste("MAPE:", MAPE_HOLT_WINTER))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Méthode 3 : Modèle ETS
+
+```{r}
+ets_modele <- forecast::ets(train_data)
+```
+
+### Affichage des prévisions
+
+```{r}
+ets_modele%>%
+  forecast(h = length(test_data))%>%
+  autoplot()
+```
+
+
+```{r}
+prevision_ets <- forecast(ets_modele, h = length(test_data))
+```
+
+
+```{r}
+plot(test_data, main = "Prévisions Modele ETS", ylab = "Valeurs")
+lines(prevision_ets$mean, col = "blue")
+legend("topleft", legend = c("Données réelles", "Prévisions"), col = c("black", "blue"), lty = c(1, 1))
+```
+
+
+
+```{r}
+# Calculer les erreurs de prévision
+errors_ets <- test_data - prevision_ets$mean
+```
+
+
+```{r}
+checkresiduals(errors_ets)
+```
+
+
+```{r}
+Box.test(errors_ets)
+```
+
+
+```{r}
+# Calculer les statistiques d'évaluation de prévision
+ME_ETS<- mean(errors_ets)
+RMSE_ETS <- sqrt(mean(errors_ets^2))
+MAE_ETS <- mean(abs(errors_ets))
+MPE_ETS <- mean(errors_ets / test_data) * 100
+MAPE_ETS <- mean(abs(errors_ets / test_data)) * 100
+```
+
+
+
+```{r}
+# Afficher les statistiques d'évaluation de prévision
+print(paste("RMSE:", RMSE_ETS))
+print(paste("MAE:", MAE_ETS))
+print(paste("MAPE:", MAPE_ETS))
+```
+
+
+# Combinaison de modèle
+
+
+```{r}
+ARIMA <- arima(finale_serie)
+ARIMA_Prediction <- forecast(ARIMA, h = 12)
+```
+
+
+```{r}
+HOLT <- HoltWinters(finale_serie, seasonal = "additive")
+HOLT_Prediction <- forecast(HOLT, h = 12)
+```
+
+```{r}
+ETS <- ets(finale_serie)
+ETS_Prediction <- forecast(ETS, h = 12)
+```
+
+
+```{r}
+CONBINE_PREDICTION <- (ARIMA_Prediction$mean + HOLT_Prediction$mean + ETS_Prediction$mean)/3
+upper_ci <- (ARIMA_Prediction$upper + ETS_Prediction$upper + HOLT_Prediction$upper)/3
+lower_ci <- (ARIMA_Prediction$lower + ETS_Prediction$lower + HOLT_Prediction$lower)/3
+```
+
+```{r}
+upper <- data.frame(upper_ci)
+bonne_sup <- upper$ARIMA_Prediction.upper...ETS_Prediction.upper.ARIMA_Prediction.upper.95.
+rm(upper)
+```
+
+```{r}
+lower <- data.frame(lower_ci)
+bonne_inf <- lower$ARIMA_Prediction.lower...ETS_Prediction.lower.ARIMA_Prediction.lower.95.
+rm(lower)
+```
+
+```{r}
+bonne_inf_ts <- ts(bonne_inf,start = c(2023, 1, 1), frequency = 12)
+bonne_sup_ts <- ts(bonne_sup, start = c(2023, 1, 1), frequency = 12)
+```
+
+
+```{r}
+bonne_inf_xts <- as.xts(bonne_inf_ts)
+bonne_sup_xts <- as.xts(bonne_sup_ts)
+prediction_combine <- as.xts(CONBINE_PREDICTION)
+```
+
+
+```{r}
+# Supposons que vous ayez trois séries de données : CONBINE_PREDICTION_TS, bonne_inf_ts, bonne_sup_ts
+
+# Tracé de la première série avec une couleur spécifique (par exemple, bleu)
+plot(prediction_combine, type = "l", col = "blue", ylim = range(bonne_inf_ts,CONBINE_PREDICTION_TS,  bonne_sup_ts), 
+     main = "Graphique des prédictions avec intervalles de confiance")
+  lines(bonne_inf_xts, col = "red")
+  lines(bonne_sup_xts, col = "green")
+  legend("topright", legend = c("Prédictions", "Intervalle inférieur", "Intervalle supérieur"), 
+       col = c("blue", "red", "green"), lty = 1, bty = "n")
+
+```
+
+
+
+```{r}
+ELectricity_Sales_with_prevision <- rbind(Elec_sales2, prediction_combine)
+```
+
+
+```{r}
+plot(ELectricity_Sales_with_prevision)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

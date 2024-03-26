@@ -1,0 +1,353 @@
+---
+title: "TP Pâquarse"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "2023-12-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+```{r}
+rm(list=ls())
+```
+
+# Partie 1 : Préparation des données
+
+```{r}
+# Chargement des librairies
+library(MASS)
+library(glmnet)
+library(lars)
+```
+
+
+```{r}
+source("fonctions_scores.R")
+
+data = read.table(file="Boston_housing.data")
+# names(data) = c("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD","TAX","PTRATIO","B","LSTAT","MEDV")
+
+n = length(data[,1])
+p = ncol(data)-1
+```
+
+
+```{r}
+# Instruction pour que tout le monde ait le même aléa de départ
+RNGkind(sample.kind = "Rounding")
+set.seed(111)
+# Vérifier que vous obtenez la même série de nombres
+sample(1:10, 5, replace=T)
+```
+
+```{r}
+# Ajout des variables aléatoires
+q = 5
+XX = round(matrix(rnorm(q * n), ncol=q, nrow=n),2)
+p = p+q
+data = cbind(XX,data)
+colnames(data)[1:p] = c(paste("R",1:q,sep=""),paste("X",1:(p-q),sep=""))
+colnames(data)[(p+1)] = "Y"
+
+# Construction des échantillons App et test
+# Réinitialisation du générateur aléatoire
+set.seed(1111)
+# Extraction des échantillons
+test.ratio=.25 # part de l'échantillon test
+npop=nrow(data) # nombre de lignes dans les données
+ntest=ceiling(npop*test.ratio) # taille de l'échantillon test
+testi=sample(1:npop,ntest) # indices de l'échantillon test
+appri=setdiff(1:npop,testi) # indices complémentaires de l'échant. d'apprentissage 
+# Construction des échantillons avec les variables explicatiues .
+dataApp=data[appri,] # construction de l'échantillon d'apprentissage
+dataTest=data[testi,] # construction de l'échantillon test
+```
+
+
+```{r}
+# Centrage et réduction des données.
+# DataApp
+m = apply(dataApp, 2, mean)
+ec = apply(dataApp, 2, sd)
+dataApp[,1:p] = scale(dataApp[,1:p])
+
+# Centrage et réduction de dataTest
+for(j in 1:p){
+	dataTest[,j] = (dataTest[,j] - m[j])/ec[j]
+}
+```
+
+
+# Partie 2 : régression MCO
+
+```{r}
+mod.lm.c = lm(Y~., data=dataApp)
+summary(mod.lm.c)
+# Stockage des coefficients estimés
+beta.mco = mod.lm.c$coef
+```
+
+
+```{r}
+# Construction des prédictions sur Eapp et Etest
+y.lmc = predict(mod.lm.c)
+yt.lmc = predict(mod.lm.c, newdata = dataTest)
+
+# Calcul des performances
+y.app = dataApp$Y
+y.test = dataTest$Y
+print(scorem(y.app,cbind(y.lmc),c("LM")))
+print(scorem(y.test,cbind(yt.lmc),c("LM")))
+```
+
+# Construction du modèle réduit
+
+```{r}
+Noms = c("R1","R2","R3", "R4","R5","X3","X7","X12")
+
+mod.lm.r = lm(formula = Y ~ X1 + X2+ X4 + X5 + X6 + X8 + X9 + X10 + X11 + X13, data = dataApp)
+summary(mod.lm.r) 
+
+# Stockage des coefficients estimés
+beta.lmr = mod.lm.r$coef
+# on complète beta.lmr avec des zéros pour qu'il ai la même longueur que beta.mco
+coeffi = beta.mco
+coeffi[Noms] = 0
+coeffi[names(beta.lmr)] = beta.lmr
+beta.lmr = coeffi
+# Comparaison des coefficients
+round(cbind(beta.mco, beta.lmr), 2)
+
+# Construction des prévisions sur Eapp et Etest.
+y.lmr = predict(mod.lm.r)
+yt.lmr = predict(mod.lm.r, newdata = dataTest)
+```
+
+
+```{r}
+xtable::xtable(round(cbind(beta.mco, beta.lmr), 2))
+```
+
+
+
+
+```{r}
+# Calcul des performances
+print(scorem(y.app,cbind(y.lmc,y.lmr),c("LM","LMr")))
+print(scorem(y.test,cbind(yt.lmc,yt.lmr),c("LM","LMr")))
+```
+
+
+# Préparation des matrices utiles pour les régressions Ridge et Lasso
+
+
+```{r}
+Y = dataApp[,ncol(data)]
+X = as.matrix(dataApp[,-ncol(data)])
+
+
+Xbf = cbind(rep(1,nrow(X)), X)
+Xtest = as.matrix(dataTest[,-ncol(data)])
+XbfTest = cbind(rep(1,nrow(Xtest)), Xtest)
+```
+
+
+## Regression Rigde
+
+```{r}
+seql = seq(1,10,0.1)
+mod.ridge = lm.ridge(Y~X,lambda=seql)
+```
+
+```{r}
+# Evolution du GCV
+plot(seql, mod.ridge$GCV, type="l", xlab="Lambda")
+```
+
+Le graphique 1 permet d'observer la GCV pour différentes valeur de la pénalité. Pour, rappelle, dans le 
+
+```{r}
+summary(mod.lm.r)
+```
+
+
+
+```{r}
+best = min(which.min(mod.ridge$GCV))
+lambda = seql[best]
+```
+
+
+
+
+
+```{r}
+# Stockage des coefficients estimés
+beta.ridge =  coef(mod.ridge)[best,]
+```
+
+```{r}
+xtable::xtable(round(cbind(beta.mco, beta.lmr, beta.ridge), 2))
+```
+
+
+```{r}
+round(cbind(beta.mco, beta.lmr, beta.ridge), 2)
+# Construction des prédictions sur Eapp
+y.ridge = Xbf %*%  beta.ridge
+# Construction des prévisions sur Etest
+yt.ridge = XbfTest %*% beta.ridge
+```
+
+
+```{r}
+# Calcul des performances
+print(scorem(y.app,cbind(y.lmc,y.lmr,y.ridge),c("LM","LMr","Ridge")))
+print(scorem(y.test,cbind(yt.lmc,yt.lmr,yt.ridge),c("LM","LMr","Ridge")))
+```
+
+
+--> Nuage de points prévus observés
+
+
+- Observé prévues modèle complet 
+
+```{r}
+Lim = c(min(y.app, yt.ridge), max(y.app, yt.ridge))
+Titre = "Nuage de points (Observes/Prevus) modèle rigde"
+plot(y.test, yt.ridge, xlab="Prix median par maison prevus",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+```{r}
+Lim = c(min(y.app, yt.lmc), max(y.app, yt.lmc))
+Titre = "Nuage de points (Observes/Prevus) modèle complet"
+plot(y.test, yt.lmc, xlab="Prix median par maison prevus",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+```{r}
+Lim = c(min(y.app, yt.lmr), max(y.app, yt.lmr))
+Titre = "Nuage de points (Observes/Prevus) modèle réduit"
+plot(y.test, yt.lmr, xlab="Prix median par maison prevus",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+
+
+#  Partie 4 : régression LASSO avec GLMNET
+
+```{r}
+mod.glmnet = glmnet(X,Y)
+```
+
+
+
+décroissance logarithmique du lambda
+
+```{r}
+diff(log(mod.glmnet$lambda))
+```
+
+
+
+```{r}
+mod.glmnet$beta
+```
+
+
+```{r}
+# visualisation des chemins de régularisation
+plot(mod.glmnet)
+```
+
+Comment définir l'arrêt... 
+
+```{r}
+# valeurs des coefficients pour une valeur de lambda donnée :
+lambda = mod.glmnet$lambda[30]
+coef(mod.glmnet,s=lambda)
+# Norme L1 des coefficients correspondant à lambda
+# pour lecture sur le graphique Lasso Paths
+sum(abs(mod.glmnet$beta[,30]))
+```
+
+```{r}
+lambda
+```
+
+
+
+```{r}
+# Recherche du lambda optimal par validation croisée par blocs
+# Evolution du MSE en fonction de log(lambda)
+set.seed(111)
+cvfit = cv.glmnet(X,Y,nfolds=10)
+plot(cvfit)
+```
+
+```{r}
+# choix du lambda optimal : selon les auteurs, il faut choisir lambda.1se
+print(min(cvfit$cvm))
+print(cvfit$lambda.min)
+print(cvfit$lambda.1se)
+```
+
+
+
+```{r}
+# Stockage des coefficients  estimés
+beta.glmnet = coef(mod.glmnet, s=cvfit$lambda.1se)
+
+# Construction des prévisions sur Eapp et Etest
+y.glmnet = predict(mod.glmnet, newx=X, s=cvfit$lambda.1se)
+# Calcul à la main
+# y.glmnet = Xbf %*% beta.glmnet
+yt.glmnet = predict(mod.glmnet, newx=Xtest, s=cvfit$lambda.1se)
+# Calcul à la main
+# yt.glmnet = XbfTest %*% beta.glmnet
+
+```
+
+
+
+```{r}
+beta.glmnet
+```
+
+
+
+
+```{r}
+print(scorem(y.app,cbind(y.lmc,y.lmr,y.ridge,y.glmnet),c("LM","LMr","Ridge","Lasso")))
+print(scorem(y.test,cbind(yt.lmc,yt.lmr,yt.ridge,yt.glmnet),c("LM","LMr","Ridge","Lasso")))
+```
+
+```{r}
+Lim = c(min(y.app, yt.glmnet), max(y.app, yt.glmnet))
+Titre = "Nuage de points (Observes/Prevus) modèle Lasso"
+plot(y.test, yt.glmnet, xlab="Prix median par maison prevus",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+
+
+
+
+
+
+
+
+
+

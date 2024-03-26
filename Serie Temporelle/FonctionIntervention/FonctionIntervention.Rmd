@@ -1,0 +1,266 @@
+---
+title: "Fonction d'intervention et de transfert"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "24/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+# clear data & close graphs
+```{r}
+rm(list=ls()) # to clear
+graphics.off() # to close figure
+```
+
+
+
+# Define the working directory
+```{r}
+setwd("~/Cours M1 MAS/Serie Temporelle Avancés/Fonction d'intervention et de transfert")
+```
+
+#-----------------------------------------------------------
+#!         loading package into the R session              !
+#-----------------------------------------------------------
+```{r}
+library(xts)
+library(readxl)
+library(astsa)
+library(ggfortify)
+library(forecast)
+library(fpp2)
+library(gets)
+```
+
+
+#-----------------------------------------------------------
+#! Importing data  from the excel file "EnergyFood.xls"   !
+#-----------------------------------------------------------
+# Time series data of energy and food prices
+
+```{r}
+Mydata <- read_excel("EnergyFood.xls")
+Mydata$date <- as.Date(as.yearmon(Mydata$date,format = "%YM%m"))
+EnergyFood <- xts(x = Mydata[,2:ncol(Mydata)], order.by = Mydata$date)
+```
+
+
+
+#---------------------------------------------------------------------------------------
+#!                 Exercice I: Transfer function, the direct approach                 !
+#---------------------------------------------------------------------------------------
+# Objective: Study the impact of energy prices (Z(t)) on food prices (X(t))
+
+```{r}
+# On a extrait les données à partir du 01-1980 à la fin
+data_ef <- EnergyFood["198001/"] # Extract data from 1980M1
+plot(data_ef)
+# Differenciation des séries
+dlener <- diff(log(data_ef$Energy))
+names(dlener) <- "dlener"
+dlfood <- diff(log(data_ef$Food))
+names(dlfood) <- "dlfood"
+```
+
+
+#**************** I) Step 1: Specification of Z(t) *****************************
+# a) Fit an ARIMA model on energy prices dlener using auto.arima(). Call this arima_ener.
+Ce sont comme les étapes de la procédure Box-Jenkins
+Etape 1 : Utiliser la plus longue période avant ou après intervention pour trouver le modele ARMA. Pour aller plus vite, il est recommandé d'utiliser directement l'auto.arima pour ça
+
+```{r}
+arima_ener <- auto.arima(dlener)
+```
+
+# b) Apply summary() to summarize the fitted model.
+```{r}
+summary(arima_ener)
+```
+dlener : un AR(1)
+
+# c) Extract the prewhitened energy series. Call this ener_zt.
+```{r}
+ener_zt <- residuals(arima_ener)
+```
+
+
+#************* II) Step 2: Cross-correlation function **************************
+# a) Use the fitted model arima_ener to filter food prices dlfood. Call this food_ft.
+```{r}
+food_ft <- residuals(Arima(dlfood, model = arima_ener))
+food_ft <- na.trim(food_ft) # Remove NA values
+```
+
+
+# b) Depict the cross-correlation function of food_ft and ener_zt using ccf2().
+Exogénéite de Z(t) : FAC(X(t), Z(t+i)) = 0 ok
+
+```{r}
+ccf2(food_ft, ener_zt)
+```
+
+
+#************ III) Step 3: Specification of A(L) and C(L) **********************
+# a) Specify C(L) given the picture of CCF.
+
+
+# b) Create the lag of energy prices dlener following the specification of C(L).
+```{r}
+dlener_l10 <- lag(dlener, k = 10) 
+names(dlener_l10) <- "dlener_l10"
+```
+
+A(L) :  a1 pour AR(1), avec a1 faible à cause de la décroissante instantanée après le pic
+
+
+# c) Specifify A(L) given the picture of CCF.
+
+
+# d) Create the lag of food prices dlfood following the specification of A(L).
+```{r}
+dlfood_l1 <- lag(dlfood, k = 1)
+names(dlfood_l1) <- "dlfood_l1"
+```
+
+
+#******************* IV) Step 4: Specification of B(L) *************************
+# Model 1: with dlener
+# a1) Estimate X(t) = alpha + a_1*X(t-1) + c_0*Z(t) + eta(t). Call this model1_step4
+
+```{r}
+datam1 <- na.trim(merge(dlfood, dlfood_l1, dlener)) # Merge and Remove NA values
+model1_step4 <- Arima(datam1[,1], order = c(0, 0, 0), xreg=datam1[,2:3], include.constant = TRUE)
+```
+
+
+# b1) Inspect the quality of the estimated model model1_step4.
+```{r}
+summary(model1_step4)
+checkresiduals(model1_step4)
+```
+
+
+# c1) Identify the specification of eta(t) to define B(L)
+```{r}
+acf2(residuals(model1_step4))
+```
+
+eta(t) est bruit blanc ==> B(L) =I
+
+# Model 2: with dlener_l10
+# a2) Estimate X(t) = alpha + a_1*X(t-1) + c_10*Z(t-10) + eta(t). Call this model2_step4
+
+```{r}
+datam2 <- na.trim(merge(dlfood, dlfood_l1, dlener_l10)) # Merge and Remove NA values
+model2_step4 <- Arima(datam2[,1], order = c(0, 0, 0), xreg=datam2[,2:3], include.constant = TRUE)
+
+```
+
+# b2) Inspect the quality of the estimated model model2_step4.
+```{r}
+summary(model2_step4)
+checkresiduals(model2_step4)
+```
+
+
+# c2) Identify the specification of eta(t) to define B(L)
+```{r}
+acf2(residuals(model2_step4))
+```
+
+
+#************************* V) Step 5: Final model ******************************
+# a) Fit the final model: X(t) = alpha + a_1*X(t-1) + c_0*Z(t) + eps(t)
+```{r}
+fmodel_direct <- Arima(datam1[,1], order = c(1, 0, 0), xreg=datam1[,3], include.constant = TRUE)
+
+```
+
+# b) Inspect the final model.
+```{r}
+summary(fmodel_direct) #Ok pour les coef
+checkresiduals(fmodel_direct) # ok pour les residus
+```
+
+
+#---------------------------------------------------------------------------------------
+#!                   Exercice II: Transfer function, ARDL with GeTS                    !
+#---------------------------------------------------------------------------------------
+# a) Create a time series matrix that contains 12 lags of dlener using lag(). Call this matrix lagdlener.
+```{r}
+lagdlener <- lag(dlener, k = 0:12) 
+```
+
+
+
+# b) Create database named "datam3" that contains dlfood and lagdlener using merge(). Use na.trim() 
+#    before storing database to remove NA values.
+```{r}
+datam3 <- na.trim(merge(dlfood, lagdlener))
+```
+
+
+
+# c) Use the arx() function of gets to formulate the initial General Unrestricted Model (GUM). Call this mgets.
+```{r}
+mgets <- arx(datam3[,1], mc=TRUE, ar=1:12, mxreg=datam3[,2:14], normality.JarqueB = TRUE)
+mgets 
+```
+
+
+# d) Proceed to the selection of the final model using getsm(). Comment the final result.
+```{r}
+model3_gets <- getsm(mgets)
+model3_gets
+```
+
+
+# e) Use Arima() function to fit the final model from gets procedure. Call this fmodel_gets.
+```{r}
+fmodel_gets <- Arima(datam3[,1], order = c(1, 0, 0), xreg=datam3[,2], include.constant = TRUE)
+fmodel_gets
+checkresiduals(fmodel_gets)
+
+```
+si hausse de 10% du prix de l'energie alors il aura un hausse de 0.8% du prix des aliments sur le mois
+
+#---------------------------------------------------------------------------------------
+#!                   Exercice III: Forecasting with the transfer function              !
+#---------------------------------------------------------------------------------------
+# a) Choose the final model between the direct and gets approach.
+
+```{r}
+fmodel <- fmodel_direct
+```
+
+#fmodel <- fmodel_gets
+
+# b) Forecast the value of dlener for the next 3 months.
+```{r}
+dlener %>% auto.arima() %>% forecast(h=3) %>% summary()
+```
+
+
+# c) Create xts vector that contains forecast of dlner for the next 3 months.
+```{r}
+mfc <- xts(x = c(-0.0175, -0.0055, -0.0017), order.by = seq(as.Date("2018-03-01"), length = 3, by = "month")) #les 3 valeurs sont pris par Point Forecast.
+names(mfc) <- "dlener"
+```
+
+
+# d) Forecast the value of food prices dlfood for the next 3 months.
+```{r}
+fcast <- forecast(fmodel, h=3, xreg = mfc) 
+fcast
+```
+variation mensuelle
+en t+1: 0.7%
+en t+2:0.3%
+en t+3:0.1%
+
+
+

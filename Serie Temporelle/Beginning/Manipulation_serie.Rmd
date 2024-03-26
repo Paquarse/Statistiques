@@ -1,0 +1,181 @@
+---
+title: "Revision CC Serie Temp"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "07/02/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+
+```{r}
+library(xts)
+library(readxl)
+```
+ 
+Faire : ?first et chosir celui du package xts pour avoir toutes les commandes du packages xts 
+ 
+# Transformer une base en une serie 
+```{r}
+setwd("~/Cours M1 MAS/Series Temporelles/TD1")
+Mydata <- read_excel("donneesTD1.xls", sheet = "TD1Data2")
+Mydata$Dates <- as.Date(as.yearmon(Mydata$Dates,format = "%YM%m"))
+ELEC_aus <- xts(x = Mydata[,2:ncol(Mydata)], order.by = Mydata$Dates)
+```
+
+# Generer une sequence de dates
+
+```{r}
+dates <- seq(as.Date("1986-01-01"), length = nrow(Mydata), by = "month") # might be by = "days", by = "month", by = "quarter", by = "year"
+```
+
+# Attribuer une classe de série temporelle xts
+```{r}
+ELEC_aus2 <- xts(x = Mydata[,2:ncol(Mydata)], order.by = dates)
+```
+
+# Extraire les données d'un fichier xts (sors sous forme de matrix)
+```{r}
+ELEC_core <- coredata(ELEC_aus)
+```
+
+# Extraire les dates (les index de la series)
+```{r}
+ELEC_index <- index(ELEC_aus)
+```
+
+# Convertir un objet xts en ts
+```{r}
+ELEC_ts <- as.ts(ELEC_aus)
+```
+
+# Convertir un objet ts en xts
+```{r}
+au <- as.xts(austres)
+```
+
+# Manipulation sur la serie x creer artificiellement
+```{r}
+x <- xts(x = 1:(30*12*15), order.by = seq(as.Date("2005-01-01"), length =30*12*15 , by = "days"))
+```
+
+# Selectionner les donnees d'une année 
+```{r}
+x_2016 <- x["2016"]
+```
+
+# selectionner les données entre deux dates
+```{r}
+jan_march <- x["2016-01-01/2016-03-22"]
+#ou
+jan_march2 <- window(x, start = "2016-01-01", end = "2016-03-22") #?window
+```
+
+# Selectionner les données avant la date janvier 2016
+```{r}
+x_b2016 <- x["/201601"]
+```
+
+# Selectionner les données après janiver 2016
+```{r}
+y <- x["201601/"]
+```
+
+# Extraire avec une condition logiques : les données dont la date est suppérieur à 20/08/2016. Possible de faire toute autre manipulation avec
+```{r}
+z <- x[index(x) > "2019-08-20"]
+```
+
+# Selectionner des données connaissant les dates (à partir des dates)
+```{r}
+dates = as.Date(c("2016-06-04","2016-06-08"))
+x[dates]
+```
+
+# Trouver les index d'une observation ou d'un plage d'observation
+```{r}
+index <- x["2007-06-26/2007-06-28", which.i = TRUE] #Penser à utiliser subset.xts si compliqué
+```
+
+# Remplacer une plage d'observation ou une observation par une valeur/des valeurs
+```{r}
+x_2016[dates] <- NA # ou c(liste des valeurs)
+```
+
+# Remplacer des valeurs d'observation selectionné par une condition logique
+```{r}
+x_2016[index(x_2016) >= "2016-06-09"] <- 0
+```
+
+# Selectionner les premier ou dernier element avec first(), last() ; confere TD1_ST.Rmd
+
+# Fusion de serie
+```{r}
+c <- xts(x = 0.5, order.by = as.Date("2015-01-23")) # series available before a
+d <- xts(x = c(2.5,2.5), order.by = as.Date(c("2015-01-27","2015-01-28")))
+a <- xts(x = c(1,1,1), order.by = as.Date(c("2015-01-24","2015-01-25","2015-01-26")))
+b <- xts(x = 2, order.by = as.Date("2015-01-24"))
+merge(a, b, join = "inner", fill = NA) # join = inner, outer, left, right
+# fill = NA : remplacer les valeurs manquantes à la fusion par NA
+# fill = 0 : valeur manquantes par 0
+# fill = na.locf : (avec outer), remplacer NA, par dernieres données disponibles
+```
+
+# Gestion de données manquantes
+
+```{r}
+e <- xts(x = c(1,NA,2,NA), order.by = as.Date(c("2015-01-24","2015-01-25","2015-01-26","2015-01-27")))
+
+p <- na.locf(e) #remplacer NA par la derniere valeur disponible
+q <- na.approx(e) # remplacer les NA par des valeurs determinées par interpolation linéaire : possible uniquement si la dernière valeur de e est disponible
+r <- na.fill(e, fill=0) # remplacer les NA par O (choisir d'autres valeurs à volonté)
+s <- na.omit(e) #supprimer les valeurs manquantes de e
+t <- na.trim(e) #supprimer la premiere et la derniere valeurs de e
+```
+
+# Creer des variables retards et avance (faire ?lag)
+
+```{r}
+new_b <- rbind(a, c,d) #
+lag_nb <- lag(new_b, k = 1) # Xt = Xt-1 (retard)
+lead_nb <- lag(new_b, k = -1) #Xt = Xt+1 (avance)
+```
+
+# Création de difference (delta de Xt) : ?diff / enlever la saisonnalité
+
+La difference première d'annuler (diff) : permet d'annuler la racine unitaire : Stationnarisé
+
+differences = 12, saisonnalité de 12 mois 
+
+differences = 6, sainonnalité de 6 mois 
+
+```{r}
+Y <- c(1, 5, 9, 17)
+diff(Y, lag = 1) #Yt-Yt-1
+```
+
+diff(log(Series)) : permet d'avoir le taux de croissance
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,520 @@
+---
+title: "TD1 ST Avance"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "24/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+# Effacement de l'interface graphique 
+```{r}
+rm(list=ls()) # to clear
+graphics.off() # to close figure
+```
+
+#definition du repertoire courant 
+```{r}
+setwd("~/Cours M1 MAS/Serie Temporelle Avancés/TD1")
+```
+
+# Chargement des packages
+```{r}
+library(xts)
+library(readxl)
+library(astsa)
+library(ggfortify)
+library(forecast)
+library(fpp2)
+```
+
+#---------------------------------------------------------------------------------------
+#!                              Exercice 1:  ARIMA simulation                          !
+#---------------------------------------------------------------------------------------
+ Notice: R provides a simple function called arima.sim() to generate data from an ARMA model. 
+         The syntax is arima.sim(model = list(order = c(p, d, q), ar= , ma = ), n = T).
+         You can also use order = c(0, 0, 0) to generate white noise.
+
+# a) Generate and plot white noise (un bruit blanc) using "order = c(0, 0, 0)". Call this series WN :
+On cherche à générer(simuler une série) à partir du processus ARMA(p, q), ici p =0, q= 0 (car bruit blanc)
+
+```{r}
+WN <- arima.sim(model = list(order = c(0, 0, 0)), n = 200)
+plot(WN)
+```
+On remarque que c'est un bruit blanc car ça fructue autour de 0
+
+# b) Generate and plot an MA(1) with parameter 0.9. Call this series MA.
+On va générer un processus MA(1) ; Xt = Eps_t - Teta*Eps_t_-_1. Important de noter l'ordre des paramètres : order = c(p, d, q) 
+L'ordre de MA(q)
+L'ordre du AR(p)
+L'ordre du retard (d) : l'ordre de la série pour rendre la série stationnaire. Si la série est déjà stationnaire d = 0 
+ 
+```{r}
+MA <- arima.sim(list(order = c(0, 0, 1), ma = 0.9 ), n = 200)
+plot(MA)
+```
+
+
+# c) Generate and plot an AR(2) with parameters 1.5 and -0.75. Call this series AR.
+Ce processus est de la forme : Xt = a_1X_t-1 + a_2X_t-2 + Eps
+
+```{r}
+AR <- arima.sim(list(order = c(2, 0, 0), ar = c(1.5,-0.75)), n = 200)
+plot(AR)
+```
+
+
+# d) Generate and plot an ARMA(2,1) with AR parameters 1.5 / -0.75 and MA 0.9. Call this series ARMA.
+```{r}
+ARMA <- arima.sim(list(order = c(2, 0, 1), ar = c(1.5,-0.75), ma=0.9), n = 200)
+plot(ARMA) 
+```
+
+# e) Generate and plot an ARIMA(2,1,1) with AR parameters 1.5 / -0.75 and MA 0.9. Call this series ARIMA.
+```{r}
+ARIMA <- arima.sim(list(order = c(2, 1, 1), ar = c(1.5,-0.75), ma=0.9), n = 200)
+plot(ARIMA) # Compare ARMA and ARIMA, what drives the trend of ARIMA?
+```
+En comparant, ARMA et ARIMA, ce qui change c'est le d = 0 (pour ARMA) et d = 1(pour ARIMA)
+
+#---------------------------------------------------------------------------------------
+#!                      Exercice 2: Selecting ARIMA Box-Jenkins                        !
+#---------------------------------------------------------------------------------------
+
+# Import the time series of average oil price from the excel file "OilPriceAv.xlsx". 
+
+```{r}
+Mydata <- read_excel("OilPriceAv.xlsx")
+Mydata$date <- as.Date(as.yearmon(Mydata$date,format = "%Ym%m"))
+oilprice <- xts(x = Mydata[,2:ncol(Mydata)], order.by = Mydata$date)
+lop <- log(oilprice)
+dlop <- diff(lop)
+```
+
+L'objectif de ARIMA est de trouver les paramètres pour rapprocher la série observée vers la série théorique à quelques bruits blanc prêts. On utilise donc l'estimateur du maximum de vraisemblance. 
+
+#************************** I) Identification *********************************
+# a) Plot the sample ACF and PACF of the oil returns "dlop" using acf2() from the astsa package.
+
+```{r}
+acf2(dlop)
+```
+
+# b) List different process that might suit dlop following Box-Jenkings*
+
+On a identifié un MA(1), AR(1), ARMA(1, 1) si la dynamique est sur 12 mois. 
+
+#********************* II) Estimation/ III) Validation ************************
+# Notice: - sarima(x, p = 0, d = 0, q = 0, P = 1, D = 0, Q = 1, S = 12)
+#           or sarima(x,p,d,q,P,D,Q,s) from astsa: with residuals fit and information criteria 
+#         - Arima(x, order=c(p,d,q), seasonal=list(order=c(P,D,Q),period=s), lambda=0) 
+#           or Arima(x, order=c(p,d,q), seasonal=c(P,D,Q), lambda=0) from forecast
+Si on par d'une serie X_t
+- Non stationnarité en variance --> On prend le log(xt) = lxt
+- Non stationnarité en moyenne --> On prend la différence  diff(lxt) = lxt-lxt_-1 = dlxt (RU)
+- ARMA
+- prévision dlxt_+2
+
+
+# a) Fit an AR(1) = ARIMA(1, 0, 0) to dlop using sarima() function.
+grand P AR saisonniere
+grand D MA saisonniere, ils seront vu dans l'autre partie du cours
+
+```{r}
+#sarima(dlop, p = 1, d = 0, q = 0)
+arima(dlop, order = c(1,0,0))
+```
+Analayse du résultat de sarima. Rappel, on avait retenu 12 mois comme dynamique.(ça concerne les trois questions suivantes)
+
+- On remarque que le 
+- p-value for Ljung-box statistic : test d'autocorrélation. Pour ACF, c'est un test d'autocorrélation ponctuelle (pris en un point donnée), alors que celui de Ljung test pour l'ensemble jusqu'à l'ordre donné. le trait bleu reprensente sur la courbe de Ljung-Box, représente le seuil de 5%. On a la p-value qui est supérieur à 0.05
+
+- Normalité donnée par le QQplot
+
+
+          |  AR(1) |  MA(1) |  ARMA(1, 1) | 
+      
+coef      |   ok   |   ok   |    pas ok   |
+Autocorre |   ok   |   ok   |      X      |
+Normalite |   ok   |   ok   |      X      |
+AIC       |-4.03933|-4.03191|      X      |
+
+Si le coefficient pour le modèle ARMA n'est pas significatif, on arrete 
+On retient le modèle qui minimise les critères d'information AIC (ou autre critère comme le SCHWARZ) : Ici on retient donc le modèle MA(1)
+
+
+# b) Fit an MA(1) to dlop using sarima() function.
+
+```{r}
+sarima(dlop,0,0,1)
+```
+
+
+# b) Fit an ARMA(1,1) to dlop using sarima() function.
+
+```{r}
+sarima(dlop,1,0,1)
+```
+
+
+#************************** IV) Prevision *********************************
+# a) Make a forecast of dlop using the final process retained
+
+Le processus retenu à partir des 3 étapes est un processus AR(1) qui est l'équivalent d'un ARMA(1, 0, 0)
+
+```{r}
+dlop%>%
+  Arima(order = c(1, 0, 0))%>%
+  forecast()%>%
+  autoplot() #On peut utiliser summary() à la place de autoplot pour avoir les valeurs
+
+dlop%>%
+  Arima(order = c(1, 0, 0))%>%
+  forecast()%>%
+  summary()
+```
+
+# b) Make a forecast of the initial series oilprice using results obtained from Box-Jenkings.
+
+log = lambda = 0
+diff = d = 1 (NS en moyenne, racine unite)
+
+En faisant sur la serie oilprice, on fait la prévision sur la vrai vraie valeur. 
+Quand on l'avait fait sur dlop, c'était la prévision sur le taux 
+
+```{r}
+oilprice %>% Arima(order=c(1,1,0), lambda=0) %>% forecast() %>% autoplot()
+oilprice %>% Arima(order=c(1,1,0), lambda=0) %>% forecast() %>% summary()
+```
+
+
+#*********** V) Additional example of Box-Jenkings selection/validation *************
+```{r}
+help(globtemp)
+plot(globtemp)
+```
+
+Le test de racine unitaire confirme la présence de racine unitaire (il ne sera pas fait ici)
+
+# a) Use ggtsdisplay() to plot the differenced data, diff(globtemp), along with its correlogram. C'est une étape d'identification
+
+
+Elle permet d'avoir la FA et la FAP
+
+```{r}
+ggtsdisplay(diff(globtemp))
+```
+
+
+#acf2(diff(___)) 
+
+Identification ARIMA p = 3, q = 4 ou q = 18n peut avoir : AR(3), MA(4) ou MA(18), ARMA(3, 4) ou ARMA(3, 18) 
+
+# b) Use sarima() to fit an ARIMA(3,1,4) model to globtemp. Are all the parameters significant? How is the residuals? Note AIC and BIC
+
+```{r}
+sarima(globtemp,3,1,4)
+```
+Validation : les coefficients (celui de ar3 et ma4 à regarder) sont significatifs
+           : les résidus sont ok !
+
+AIC : -1.68
+
+# c) Fit an ARIMA(0,1,4) model to globtemp. Are all the parameters significant? How is the residuals? Note AIC and BIC
+
+```{r}
+sarima(globtemp,0,1,4)
+```
+AIC : -230.26 ; si on a pas les probabilités, on 
+
+
+# e) Fit an ARIMA(3,1,0) model to globtemp. Are all the parameters significant? How is the residuals? Note AIC and BIC
+
+```{r}
+sarima(globtemp,3,1,0)
+```
+Le modele ARIMA(3, 1, 0) est le meilleur
+
+# c) Use sarima() to fit an ARIMA(1,1,1) model to globtemp. Are all the parameters significant? How is the residuals? Note AIC and BIC
+
+```{r}
+sarima(globtemp,1,1,1)
+```
+
+Validation : coefficients ok
+
+# d) Which is the best model? 
+# Conclusion: ?? is better
+
+
+#---------------------------------------------------------------------------------------
+#!             Exercice 3: Forecasting with ARIMA (forecast package)                   !
+#---------------------------------------------------------------------------------------
+# Notice: in the examples here, watch for how the different models affect the forecasts 
+#         and the prediction intervals. 
+
+```{r}
+help(austa)
+plot(austa) # Total international visitors to Australia (in millions). Annual 1980-2015.
+```
+
+# a) Plot forecasts from an ARIMA(1,0,0) model with a constant: AR(1)
+
+```{r}
+austa %>% Arima(order = c(1, 0, 0), include.constant = TRUE) %>% forecast() %>% autoplot()
+
+```
+
+Cette prévision n'est pas du toute bonne. A la prochiane question, on va ajouté une moyenne mobile pour voir
+
+# b) Plot forecasts from an ARIMA(0,0,1) model with a constant: MA(1)
+```{r}
+austa %>% Arima(order = c(0, 0, 1), include.constant = TRUE) %>% forecast() %>% autoplot()
+
+```
+On va donc dire à de differencié la série 
+
+# c) Plot forecasts from an ARIMA(1,1,0) model with drift
+
+La difference vient de d = 1 ()
+```{r}
+austa %>% Arima(order = c(1, 1, 0), include.constant = TRUE) %>% forecast() %>% autoplot()
+```
+
+# d) Plot forecasts from an ARIMA(0,1,1) model with drift
+
+```{r}
+austa %>% Arima(order = c(0, 1, 1), include.constant = TRUE) %>% forecast() %>% autoplot()
+
+```
+
+On conclut donc que ce qui posait un problème, c'est bien le fait que d = 0
+
+# e) Plot forecasts from an ARIMA(0,1,1) model with "no" drift
+```{r}
+austa %>% Arima(order = c(0, 1, 1), include.constant = FALSE) %>% forecast() %>% autoplot()
+```
+
+En retirant la constante, on tombe sur le même problème. En conclusion :
+
+Pour une serie I(1) avec tendance stochastique, il est important de tenir compte de :
+(1) - la racine unité (d=1)
+(2) - la constante (include.constante = TRUE)
+
+# f) Plot forecasts from an ARIMA(2,1,3) model with drift
+
+```{r}
+austa %>% Arima(order = c(2, 1, 3), include.constant = TRUE) %>% forecast() %>% autoplot()
+```
+
+
+
+#---------------------------------------------------------------------------------------
+#!                       Exercice 4: Automatic ARIMA selection                         !
+#---------------------------------------------------------------------------------------
+
+# a) Fit an automatic ARIMA model to the austa series using auto.arima() function. Save this to fit.
+Pour ce faire, autO.arima() saute quelques partie pour tourner vite
+```{r}
+fit <- auto.arima(austa)
+```
+
+# b) Apply summary() to the model to see the fitted coefficients.
+```{r}
+summary(fit)
+```
+1- il conclut qu'il y a une racine unité il a differencie
+2 - il identifie un ARIMA(0, 1, 1) with drift (il prend en compte la constante) : p = 0, d = 1, q = 1
+
+# c) Check that the residuals look like white noise.
+```{r}
+checkresiduals(fit)
+```
+
+Les résidus sont ok 
+
+# d) Finally, using the pipe operator, plot forecasts of the next 10 periods from the chosen model. Pour faire la prévision
+```{r}
+fit %>% forecast(h = 10) %>% autoplot()
+```
+Si le langage ne nous donne pas les p-value, on les calculs nous même en divisant le coefficient par l'ecart type
+
+# e) Use auto.arima() without a stepwise search to find an ARIMA model for austa.
+stepwise permet de dire la série de ne sauter aucune étape
+
+```{r}
+summary(auto.arima(austa, stepwise = FALSE))
+```
+
+
+
+#---------------------------------------------------------------------------------------
+#!                    Exercice 5: On the way to the art of forecasting                 !
+#---------------------------------------------------------------------------------------
+
+```{r}
+help(gold)
+plot(as.xts(gold))
+```
+
+
+
+#********* I) Select the best model for forecast of gold with standard criteria ***********
+# Notice: for forecast accuracy, the function is accuracy(f, x, ...) where f is an object of
+#         class "forecast" and x is a time series (original data or test set)
+
+```{r}
+length(gold)
+```
+On va créer un échantillon d'apprentissage et un échantillon test
+
+# a) Use subset() to create a training set for gold comprising the first 1000 observations. This will be called train.
+
+```{r}
+train <- subset(gold, end = 1000)
+```
+
+# b) Use subset() to create a test set for gold containing the remaining data. This will be called test.
+
+```{r}
+test <- subset(gold, start = 1001)
+```
+
+# c) Compute forecasts of the test set using naive() and assign this to naive_fc. Set h accordingly.
+# Notice: - Naive forecast: use the most recent observation.
+Le modele de base qu'on va utiliser est le modele naif ou le modèle AR(1) : c'est le modele de reference. Rappelle : on utilise snaive si la serie a une saisonnalite
+
+```{r}
+naive_fc <- naive(train, h = 108)
+autoplot(naive_fc) + autolayer(test, series = "Test data")
+```
+
+# d) Compute forecasts of the same test set using auto.arima and assign this to arima_fc. Set h accordingly.
+#    (a) Use the automatic selection
+
+```{r}
+farima <- function(x, h){forecast(auto.arima(x,stepwise = FALSE), h=h)} # Function for ARIMA auto
+
+
+arima_fc <- farima(train, h = 108)
+autoplot(arima_fc) + autolayer(test, series = "Test data")
+```
+
+
+
+#    (b) Store the optimal selection from auto.arima().
+C'est juste une étpae pédagogique
+```{r}
+farima_opt <- function(x, h){forecast(Arima(x, order=c(1,1,4), include.constant = TRUE), h=h)}
+```
+ 
+
+# e) Compute forecasts of the same test set using ar(1) and assign this to ar1_fc. Set h accordingly. 
+
+on a pris AR(1) comme modele de référence
+
+```{r}
+far1 <- function(x, h){forecast(Arima(x, order=c(1,0,0)), h=h)}
+ar1_fc <- far1(train, h = 108)
+autoplot(ar1_fc) + autolayer(test, series = "Test data")
+```
+
+
+# f) Compare the forecast accuracy statistics of different methods using the accuracy() function.
+
+```{r}
+accuracy(naive_fc, gold)
+accuracy(arima_fc, gold)
+accuracy(ar1_fc, gold)
+```
+En utilisant le RMSE on choisi le modele AR(1)
+
+# g) Check residuals from each forecast. Which is the best model that delivers white nose residuals?
+```{r}
+checkresiduals(naive_fc) 
+checkresiduals(arima_fc) 
+checkresiduals(ar1_fc)
+```
+
+
+#**************** II) Select the best model for forecast with TSCV **********************
+# Notice: tsCV computes the forecast errors obtained from subsets of the time series y 
+#         using a rolling forecast origin (RFO).
+
+# a) Forecasting with the naive() function: naive
+#   a1) compute the cross-validated errors for up to 7 steps ahead (1week). Assign this to e_naive.
+```{r}
+e_naive <- tsCV(gold, forecastfunction = naive, h = 7)
+```
+
+
+
+#   a2) Compute the MSE values for each forecast horizon. Call this mse_naive.
+```{r}
+mse_naive <- colMeans(e_naive^2, na.rm = TRUE)
+mse_naive
+```
+
+
+# b) Forecasting with the auto.arima() function: farima_opt
+#   b1) compute the cross-validated errors for up to 7 steps ahead (1week). Assign this to e_arima.
+
+```{r}
+e_arima <- tsCV(gold, forecastfunction = farima_opt, h = 7)
+```
+
+
+#   b2) Compute the MSE values for each forecast horizon. Call this mse_arima.
+
+```{r}
+mse_arima <- colMeans(e_arima^2, na.rm = TRUE) 
+```
+
+
+# c) Forecasting with the ar(1) function: far1
+#   c1) compute the cross-validated errors for up to 7 steps ahead (1week). Assign this to e_far1.
+
+```{r}
+e_far1 <- tsCV(gold, forecastfunction = far1, h = 7)
+```
+
+
+#   c2) Compute the MSE values for each forecast horizon. Call this mse_far1.
+```{r}
+mse_far1 <- colMeans(e_far1^2, na.rm = TRUE)
+```
+
+
+# d) Compare MSE from tsCV() for different models. Which is the best model?
+```{r}
+mse_naive
+mse_arima
+mse_far1
+```
+Classement : 1er : naif | 2eme : AR(1) | ARIMA(1, 14)
+
+#******************** III) Now make the best forecast **************************
+# a) Use your final chosen model to forecast the value gold for the next following month (7*4 days)
+#    Recall: functions are naive, farima_opt and far1
+
+```{r}
+gold %>% naive(h=7*4) %>% forecast() %>% autoplot()
+gold %>% farima_opt(h=7*4) %>% forecast() %>% autoplot()
+gold %>% far1(h=7*4) %>% forecast() %>% autoplot()
+```
+
+
+# b) Take the value of the point forecast along with confidence interval
+gold %>% ___(h=7*4) %>% forecast() %>% summary()
+
+
+
+
+
+
+
+

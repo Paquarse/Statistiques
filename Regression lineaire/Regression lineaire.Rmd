@@ -1,0 +1,531 @@
+---
+title: "TD1 - STAT 2"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "2023-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+```{r}
+rm(list=ls())
+graphics.off()
+```
+
+
+# Partie 1 (Etude descriptive des donnees)
+
+```{r}
+source("fonctions_scores.R")
+data = read.table(file="Boston_housing.data")
+names(data)
+# Nom des variables
+names(data) = c("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD",
+                "TAX","PTRATIO","B","LSTAT","MEDV")
+# La variable à expliquer est : MEDV
+# Nombre de régresseurs
+p = ncol(data)-1
+# Taille des données
+n = length(data[,1])
+```
+
+```{r}
+names(data) = c("CRIM","ZN","INDUS","CHAS","NOX","RM","AGE","DIS","RAD","TAX","PTRATIO","B","LSTAT","MEDV")
+# La variable a expliquer est : MEDV
+# Nombre de regresseurs
+p = ncol(data)-1
+# Taille des donnees
+n = length(data[,1])
+```
+
+On cherche à expliquer la variable MEDV 
+
+Ensemble de données sur les prix de l'immobilier à Boston. 
+Caractéristiques de l'ensemble de données :
+
+    - Nombre d'instances : 506
+    - Nombre d'attributs : 13 prédictifs numériques/catégoriques.
+La valeur médiane (attribut 14) est généralement la cible.
+
+    :Informations sur l'attribut (dans l'ordre) :
+        - Taux de criminalité par habitant du CRIM par commune
+        - Proportion ZN de terrains résidentiels zonés pour des lots de plus de 25 000 pi².
+        - Proportion INDUS des superficies commerciales non commerciales par ville
+        - Variable fictive CHAS Charles River (= 1 si le tronçon délimite la rivière ; 0 sinon)
+        - Concentration d'oxydes d'azote NOX (parties pour 10 millions)
+        - Nombre moyen de pièces par logement RM
+        - Proportion d'ÂGE des logements occupés par leur propriétaire construits avant 1940
+        - Distances pondérées DIS vers cinq centres d'emploi de Boston
+        - Indice RAD d'accessibilité aux autoroutes radiales
+        - TAXE taux de taxe foncière pleine valeur par 10 000 $
+        - Ratio élèves/enseignant PTRATIO par commune
+        - B 1000(Bk - 0,63)^2 où Bk est la proportion de noirs par ville
+        - LSTAT % statut inférieur de la population
+        - MEDV Valeur médiane des maisons occupées par leur propriétaire en 1 000 $
+
+```{r}
+str(data)
+```
+
+```{r}
+statbase = NULL
+for (j in 1:ncol(data)){
+  statbase =rbind(statbase, summary(data[,j]))
+}
+rownames(statbase) = names(data)
+#statbase
+# Ajout des ´ecart-types
+ecart.type = apply(data, 2, sd)
+statbase = cbind(statbase, ecart.type)
+round(statbase, 2)
+```
+
+
+```{r}
+stargazer::stargazer((round(statbase, 2)),type = "latex", title = "Statistique descriptive")
+```
+
+
+```{r}
+library(ggplot2)
+# Utilisation de ggplot2 pour créer un boxplot pour chaque variable sur le même graphique
+melted_data <- reshape2::melt(data)
+
+ggplot(melted_data, aes(x=variable, y=value)) +
+  geom_boxplot(fill="skyblue", color="black") +
+  facet_wrap(~variable, scales="free") +
+  theme_minimal()
+
+```
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+# Définir les colonnes à tracer
+columns_to_plot <- names(data)
+
+# Configuration du tracé avec ggplot2
+plots <- lapply(columns_to_plot, function(column) {
+  ggplot(data, aes(x = data[[column]])) +
+    geom_density(fill = "skyblue", color = "black") +
+    ggtitle(paste("Distribution de", column)) +
+    theme_minimal()
+})
+```
+
+```{r}
+# Combinaison des tracés en une seule grille
+grid.arrange(grobs = plots, ncol = 7, nrow = 2)
+```
+
+
+Nous pouvons remarquer les données ne sont pas de la même grandeur et ne sont pas dans les mêmes unités. Nous pouvons donc penser au centrage qui parait beaucoup plus intéressant pour l'analyse des données. 
+
+```{r}
+plot(data)
+```
+  
+
+
+La fonction plot(data) permet de représenter le nuage de point entre les variables deux à deux. A l'oeil nu, cette corrélation reste très difficile à apprécier au vue du nombre élévé d'observation. 
+
+4. Etudier les multi-colinearites a l'aide de la suite de commandes.
+
+La variable à expliquer étant à la dernière colonne de notre dataset, ce dernier sera retiré afin d'apprécier les correlations entre les régresseurs
+
+```{r}
+X = data[,-c(ncol(data), which(colnames(data) == "CHAS"))]
+VIF = diag(solve(cor(X)))
+round(VIF, 2)
+```
+
+```{r}
+stargazer::stargazer((round(VIF, 2)), type = "latex", title = "Multicolinéarité des variables")
+```
+
+
+```{r}
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot::corrplot(cor(X), method="color", col=col(200),  
+         type="upper", order="hclust", 
+         addCoef.col = "black", # Ajout du coefficient de corrélation
+         tl.col="black", tl.srt=45,
+         diag=FALSE 
+)
+```
+
+
+
+5. Quelles sont les conclusions a tirer de cette petite etude ?
+
+Connaitre les bases de données et y faire des 
+
+
+# Partie 2 
+
+1. Compl7ter le data frame a l'aide des instructions suivantes :
+```{r}
+# Instruction pour que tout le monde ait le m^eme al´ea de d´epart
+RNGkind(sample.kind = "Rounding")
+set.seed(111)
+# V´erifier que vous obtenez la m^eme s´erie de nombres
+sample(1:10, 5, replace=T)
+# [1] 6 8 4 6 4
+# Ajout des variables al´eatoires
+q = 5
+XX = round(matrix(rnorm(q * n), ncol=q, nrow=n),2)
+p = p+q
+data = cbind(XX,data)
+# Renommage des variables
+colnames(data)[1:p] = c(paste("R",1:q,sep=""),paste("X",1:(p-q),sep=""))
+colnames(data)[(p+1)] = "Y"
+names(data)
+# R1-R5 : r´egresseurs al´eatoires
+# X1-X13 : variables d’origine
+# Y : variable `a expliquer
+```
+
+2. A l'aide des instructions suivantes, construire les echantillons d'apprentissage Eapp et de test
+Etest.
+
+```{r}
+set.seed(1111)
+# Extraction des ´echantillons
+test.ratio=.25 # part de l’´echantillon test
+npop=nrow(data) # nombre de lignes dans les donn´ees
+ntest=ceiling(npop*test.ratio) # taille de l’´echantillon test
+testi=sample(1:npop,ntest) # indices de l’´echantillon test
+appri=setdiff(1:npop,testi) # indices compl´ementaires de l’´echant. d’apprentissage
+# Construction des ´echantillons avec les variables explicatives .
+dataApp=data[appri,] # construction de l’´echantillon d’apprentissage
+dataTest=data[testi,] # construction de l’´echantillon testtissage
+dataTest=data[testi,] # construction de l'echantillon test
+```
+
+
+3. Le cas echeant, centrer et reduire les donnees. La variable X4 etant binaire, on ne la modiera
+pas. Pour cela, on utilisera les parametres de moyenne et de variance calcules sur dataApp.
+
+```{r}
+# DataApp
+m = apply(dataApp, 2, mean)
+ec = apply(dataApp, 2, sd)
+dataApp[, -c(9, p+1)] = scale(dataApp[,-c(9,p+1)])
+
+# Centrage et r´eduction de dataTest
+for(j in c(1:8, 10:p)){
+  dataTest[,j] = (dataTest[,j] - m[j])/ec[j]
+}
+```
+
+
+
+
+# Partie 3 (Modelisation par moindres carres ordinaires)
+
+
+
+```{r}
+mod.lm.c <- lm(Y ~., data = dataApp)
+summary(mod.lm.c)
+```
+
+On a un R2 ajusté explique 72% de la variance totale 
+
+
+
+```{r}
+# Code pour générer le tableau avec sjPlot
+library(sjPlot)
+library(knitr)
+tab_model(mod.lm.c, show.ci = FALSE, show.se = TRUE, show.stat = TRUE, show.reflvl = TRUE, show.fstat = TRUE, show.re.var = TRUE, show.zeroinf = TRUE, show.icc = TRUE)
+```
+
+```{r}
+xtable::xtable(summary(mod.lm.c))
+```
+
+
+2. 
+
+```{r}
+y.app = dataApp$Y
+y.test = dataTest$Y
+y.lmc = predict(mod.lm.c)
+yt.lmc = predict(mod.lm.c, newdata = dataTest)
+```
+
+
+```{r}
+Lim = c(min(y.app, y.lmc), max(y.app, y.lmc))
+Titre = "Nuage de points (Observes/Estimes)"
+plot(y.app, y.lmc, xlab="Prix median par maison observe",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+
+
+```{r}
+Lim = c(min(y.test, yt.lmc), max(y.test, yt.lmc))
+Titre = "Nuage de points (Observes/Prevus)"
+plot(y.test, yt.lmc, xlab="Prix median par maison prevus",
+ylab="Prix median par maison estime", main= Titre,
+cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+
+```{r}
+print(scorem(y.app,cbind(y.lmc),c("LM")))
+print(scorem(y.test,cbind(yt.lmc),c("LM")))
+```
+
+# Partie 4 : 
+
+Sélection de variables pas à pas descendante basée sur le critère AIC
+
+```{r}
+mod.lm.r <- step(mod.lm.c, direction = "backward", trace = 1)
+```
+
+```{r}
+formula(mod.lm.r)
+```
+
+
+```{r}
+mod.lm.r<-lm(Y~X1+X2+X4+X5+X6+X8+X9+X10+X11+X13,data=dataApp)
+summary(mod.lm.r)
+```
+
+```{r}
+Noms = c("R1","R2","R3","R4","R5","X3","X7","X12")
+```
+
+
+```{r}
+# Stockage des coefficients estimes
+beta.lmr = mod.lm.r$coef
+# on compl`ete beta.lmr avec des z´eros pour qu’il ai la m^eme longueur que beta.mco
+beta.mco = mod.lm.c$coef
+coeffi = beta.mco
+coeffi[Noms] = 0
+coeffi[names(beta.lmr)] = beta.lmr
+beta.lmr = coeffi
+```
+
+
+
+# Comparaison des coefficients
+```{r}
+xtable::xtable(round(cbind(beta.mco, beta.lmr), 2))
+```
+
+
+############## Question 2 ###########################
+# Test de Fisher pour comparer les deux modèles
+
+```{r}
+fisher_test <- anova(mod.lm.c, mod.lm.r, test = "F")
+```
+
+
+```{r}
+print(fisher_test)
+```
+
+# Afficher les résultats
+```{r}
+xtable::xtable(fisher_test)
+```
+
+
+
+
+################# QUESTION 3 ################################
+# Construction des predictions sur Eapp et Etest
+
+```{r}
+y.app = dataApp$Y
+y.test = dataTest$Y
+y.lmc = predict(mod.lm.r)
+yt.lmc = predict(mod.lm.r, newdata = dataTest)
+```
+
+# Construction des nuages de points
+# (observ´es, Estim´es)
+
+```{r}
+Lim = c(min(y.app, y.lmc), max(y.app, y.lmc))
+Titre = "Nuage de points (Observés/Estimés)"
+plot(y.app, y.lmc, xlab="Prix médian par maison observé",
+     ylab="Prix médian par maison estimé", main= Titre,
+     cex=1.5, cex.lab=1.6, cex.main = 1.7,cex.axis=1.5, pch=19, xlim=Lim, ylim=Lim)
+abline(0,1, col=2, lwd=2)
+```
+
+
+
+# (Observ´es, Pr´evus)
+# A compl´eter
+# Calcul des performances
+```{r}
+print(scorem(y.app,cbind(y.lmc),c("LM")))
+print(scorem(y.test,cbind(yt.lmc),c("LM")))
+```
+
+
+
+########## Question 4 ############################
+# Modèle linéaire initial avec l'intercept
+
+```{r}
+model_initial <- lm(Y ~ 1, data = dataApp)
+mod.lm.r.as <- step(model_initial, direction = "forward", scope=formula(~R1+R2+R3+R4+R5+X1+X2+X3+X4+X5+X6+X7+X8+X9+X10+X11+X12+X13),trace = 1)
+```
+
+
+
+```{r}
+formula(mod.lm.r.as)
+```
+
+
+
+########## Question 5 ############################
+# Sélection de variables pas à pas descendante basée sur le critère AIC
+
+```{r}
+mod.lm.r.step <- step(mod.lm.c, direction = "backward", trace = 1)
+```
+
+
+```{r}
+xtable::xtable(mod.lm.r.step)
+```
+
+
+
+########## Question 6 ############################
+```{r}
+# Résidus du modèle
+residuals <- residuals(mod.lm.r)
+```
+
+
+```{r}
+# Ajouter la densité estimée
+dens_est <- density(residuals)
+# Graphe des résidus
+plot(residuals, main = "Graphique des Résidus", ylab = "Résidus")
+abline(h=0)
+```
+
+
+
+
+
+
+# Histogramme des résidus
+```{r}
+hist(residuals, main = "Histogramme des Résidus avec Densité Estimée", xlab = "Résidus", col = "lightblue", border = "black", probability = TRUE)
+lines(dens_est, col = "red", lty = 1)
+```
+
+# QQ-plot des résidus
+
+```{r}
+qqnorm(scale(residuals),pch=19,cex.main=1.6,cex.axis=1.3,cex.lab=1.4,cex=1.2)
+abline(0,1,col="red",lwd=2)
+```
+
+
+
+```{r}
+shapiro.test(mod.lm.r$residuals)
+```
+
+```{r}
+# Supposons que mod.lm.r est votre modèle linéaire
+resultats_test_shapiro <- shapiro.test(mod.lm.r$residuals)
+
+# Afficher les résultats du test de Shapiro-Wilk
+cat("\\begin{table}[ht]\n")
+cat("\\centering\n")
+cat("\\begin{tabular}{l r}\n")
+cat("\\hline\n")
+cat("Statistique de test & ", resultats_test_shapiro$statistic, "\\\\\n")
+cat("Valeur p & ", resultats_test_shapiro$p.value, "\\\\\n")
+cat("\\hline\n")
+cat("\\end{tabular}\n")
+cat("\\caption{Test de Shapiro-Wilk sur les résidus du modèle}\n")
+cat("\\end{table}\n")
+```
+
+
+
+```{r}
+library(car)
+durbinWatsonTest(mod.lm.r)
+```
+
+```{r}
+# Supposons que mod.lm.r est votre modèle linéaire
+library(car)
+resultats_test_durbin_watson <- durbinWatsonTest(mod.lm.r)
+
+# Afficher les résultats du test de Durbin-Watson
+cat("\\begin{table}[ht]\n")
+cat("\\centering\n")
+cat("\\begin{tabular}{l r}\n")
+cat("\\hline\n")
+cat("Statistique de test (Durbin-Watson) & ", resultats_test_durbin_watson$dw, "\\\\\n")
+cat("Valeur p & ", resultats_test_durbin_watson$p, "\\\\\n")
+cat("Autocorrelation &", resultats_test_durbin_watson$r, "\\\\\n")
+cat("\\hline\n")
+cat("\\end{tabular}\n")
+cat("\\caption{Résultats du test de Durbin-Watson}\n")
+cat("\\end{table}\n")
+
+```
+
+
+```{r}
+library(lmtest)
+breusch_pagan_test <- bptest(mod.lm.r)
+print(breusch_pagan_test)
+```
+
+```{r}
+# Supposons que mod.lm.r est votre modèle linéaire
+library(lmtest)
+breusch_pagan_test <- bptest(mod.lm.r)
+
+# Afficher les résultats du test de Breusch-Pagan
+cat("\\begin{table}[ht]\n")
+cat("\\centering\n")
+cat("\\begin{tabular}{l r}\n")
+cat("\\hline\n")
+cat("Statistique de test (Breusch-Pagan) & ", breusch_pagan_test$statistic, "\\\\\n")
+cat("Valeur p-value & ", breusch_pagan_test$p.value, "\\\\\n")
+cat("DF &", breusch_pagan_test$parameter, "\\\\\n")
+cat("\\hline\n")
+cat("\\end{tabular}\n")
+cat("\\caption{Résultats du test de Breusch-Pagan}\n")
+cat("\\end{table}\n")
+```
+
+```{r}
+breusch_pagan_test$parameter
+```
+
+
+
+
+

@@ -1,0 +1,208 @@
+---
+title: "Lissage"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "09/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr ::opts_chunk$set(comment=NA)
+```
+
+
+```{r}
+library(xts)
+library(readxl)
+library(astsa)
+library(ggfortify)
+library(forecast) #Pour faire la prévision de série temporrelle
+library(fpp2) #Pour les séries temporelles
+library(seasonal)
+library(tseries)
+```
+
+# A faire en CC Modèle ETS (Error Trend Seasonal) : 
+
+- Error => Résidual (Addictif ou multiplicatif)
+- Trend => Tendance (None N | Tendance A | Tendance Attenué Ad)
+- Seasonal => Saisonnalité (None N | Addictif A | Multiplicatif M)
+
+```{r}
+# Représenté la série
+autoplot(hyndsight)
+
+# Connaitre le comportement de la série
+fiths <- ets(hyndsight)
+
+# Visualiser pour connaitre la nature de la serie
+summary(fiths)
+
+# Verifier les residus
+checkresiduals(fiths) #possibilité de faire
+#jarque.bera.test(residuals(fiths))
+
+#Trouver les valeurs predites avec... et les representé...
+forecast(fiths) #h = dans forecast pour spécifier l'horizon
+autoplot(forecast(fiths)) 
+
+## Comparer au modele naif
+#Echantillon test
+baba <- subset(hyndsight, end = length(hyndsight) - 20)
+
+#Modele naive
+banaiv <- naive(baba, h = 20)
+
+#Modele construit
+essay <- ets(baba)
+donne <- forecast(essay, h=20)
+
+#comparaison
+accuracy(donne, hyndsight)
+accuracy(banaiv, hyndsight)
+```
+Sur le premier graphqiue, on vérifie que les résidus sont biens centrées autour de 0 (surtout en présence de tendance ce qui est par defaut)
+
+On voit la normalité(ou non) sur le graphique residuals. Cela doit etre symétrique au tour de 0 normalement. Si un seul doute, on peut extraire les résidus (residuals()) et ensuite faire un test de Normalité (qqplot)...
+
+Pour le ACF, tous les résidus doivent être dans l'invervalle de confiance. C'est la confirmation de la non autocorrélation. On confirme ou infirme cela grâce au test de Ljung_Box qui est un test d'autocorrélation ayant pour hypothèse HO : absence d'autocorrélation. (ici = 0.1694 donc on ne rejette pas l'autocorrélation)
+
+HO (loi normales) : residus ne suivent pas une loi normale
+
+# Faire un lissage exponentiel simple à 10 par exemple 
+
+```{r}
+fc <- ses(marathon, h = 10) #Même valeur pour h = 1, 2, 3, 
+# Pour visuliser
+#summary(fc)
+# Point forecast : Valeur predicte, Lo : borne int IC | Hi : borne sup IC
+# alpha : paramètre de lissage
+# fc est une liste contenant plusieurs informations
+# fitted : contient les valeurs lissées
+```
+
+# Ajoutez les valeurs ajustées au tracé
+
+```{r}
+#autoplot(fc) + autolayer(fitted(fc)) 
+```
+
+# Comparer le lissage exponentiel au modèle naive
+Pour rappelle 03 modèles
+- Modèle naif Xt + 1 = Xt
+- Modèle moyenne Xt + 1 = Moyenne(Xt)
+- Modèle AR(1) = Xt + 1 = alpha*Xt
+
+Etape 1 : construire l'echantillon d'apprentissage avec subset
+
+Etape 2 : Faire les deux modèle avec les fonction ses et naive
+
+Etape 3 : Comparer les modèles avec accurancy
+
+```{r}
+#Construction du stage d'apprentissage
+train <- subset(marathon, end = length(marathon) - 20) 
+
+# Faire la prevision naive et le ses
+fcses <- ses(train, h = 20)
+fcnaive <- naive(train, h = 20)
+
+# Si la série présente une saisonnalité, la fonction pour avoir naive est : snaive
+```
+
+#Comparaison des modèles et choix
+
+Prend comme argument, la valeurs prédictes sur la base teste et les vraies valeurs et fait ensuite la comparaison. Le plus petit pour un critère est le plus performant. Si on prends tous les critères excepté le Theil's U montrent que le modèle naïf est mieux.
+
+Pour choisir pour un critère donné, c'est le plus petit qui est le mieux
+
+```{r}
+# Comparer chacun des deux modèles au modèle de base (serie de base)
+accuracy(fcses, marathon) 
+accuracy(fcnaive, marathon)
+```
+
+# Lissage exponentiel double de Holt
+h : horizon 
+damped : tendance attenué (faire tendre la tendance vers une constante : éviter la tendance à augmenter à l'infini)
+?holt / PI : intervalle de prevision (= True ou False)
+
+```{r}
+# Voir la série
+#autoplot(oil)
+
+# Lissage exponentiel de Holt (ce sont des LED)
+fcholt <- holt(oil, h=10)
+#summary(fcholt) #Pour visualiser
+
+# Tracer la prévision
+#autoplot(fcholt)
+
+#Verifier que les résidus ressemblent à du bruit blanc
+#checkresiduals(fcholt)
+```
+
+
+Sur le premier graphqiue, on vérifie que les résidus sont biens centrées autour de 0 (surtout en présence de tendance ce qui est par defaut)
+
+On voit la normalité(ou non) sur le graphique residuals. Cela doit etre symétrique au tour de 0 normalement. Si un seul doute, on peut extraire les résidus (residuals()) et ensuite faire un test de Normalité (qqplot)...
+
+Pour le ACF, tous les résidus doivent être dans l'invervalle de confiance. C'est la confirmation de la non autocorrélation. On confirme ou infirme cela grâce au test de Ljung_Box qui est un test d'autocorrélation ayant pour hypothèse HO : absence d'autocorrélation. (ici = 0.1694 donc on ne rejette pas l'autocorrélation)
+
+Si pas sur de la normalité, faire un test de normalité avec
+```{r}
+# HO : les erreurs suivent une loi Normale
+#jarque.bera.test(residuals(fcholt))
+```
+# Lissage exponentiel avec Tendance amortie
+
+```{r}
+fcholt1 <- holt(oil, h = 10, PI = FALSE)
+fcholt2 <- holt(oil, damped = TRUE, h = 10, PI = FALSE) #C'est le damped qui peremet de le spécifié
+
+#autoplot(fcholt2)
+```
+# Représenté les deux pour voir ce que ça donne
+
+```{r}
+autoplot(oil) + xlab("Année") + ylab("millions de tonnes") +
+  autolayer(fcholt1, series="Tendance linéaire") + autolayer(fcholt2, series="Tendance amortie")
+```
+
+# Lissage exponentiel double avec presence de saisonnalité
+
+```{r}
+#?hw
+fca <- hw(austourists, saisonnier = "addictive", damped = TRUE)
+#Saisonnier = c("addictive", "mulplicative)
+#autoplot(fca)
+#checkresiduals(fca)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

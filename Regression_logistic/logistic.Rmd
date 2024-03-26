@@ -1,0 +1,605 @@
+---
+title: "Logistique"
+author: "Pâquarse Delvich Van Mahouvi"
+date: "2023-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+```
+
+
+Description des variables (article sur moodle)
+
+# Partie 1 
+1- Chargement
+
+```{r}
+nomfile = "Desbois_data.csv"
+data = read.table(file = nomfile, header=T, sep=";")
+rm(nomfile)
+```
+
+```{r}
+head(data)
+```
+
+
+
+```{r}
+library(xtable)
+```
+
+
+# Statistique descriptives
+
+```{r}
+Y = data[,1]
+Y = as.factor(Y)
+levels(Y) <- c("sain", "defaillant")
+X = data[,-1]
+```
+
+2- Répartition 
+
+```{r}
+table(Y)
+```
+
+
+3- 
+
+```{r}
+# Calcul des statistiques de base
+statbase = NULL
+for (j in 1:ncol(X)){
+  statbase =rbind(statbase, summary(X[,j]))
+}
+rownames(statbase) = names(X)
+ecart.type = apply(X, 2, sd)
+statbase = cbind(statbase, ecart.type)
+round(statbase, 2)
+
+#rm(ecart.type, j, statbase)
+```
+
+```{r}
+xtable(round(statbase, 2))
+```
+
+
+4- 
+```{r}
+library(corrplot)
+corrplot(cor(X))
+```
+
+
+```{r}
+source("http://www.sthda.com/upload/rquery_cormat.r")
+cc = rquery.cormat(X, type="flatten", graph=FALSE)$r
+cm = cc[order(abs(cc[,"cor"]),decreasing=T),]
+```
+
+
+
+```{r}
+VIF = diag(solve(cor(X)))
+round(VIF[order(VIF, decreasing=T)],2)
+#rm(VIF)
+```
+
+```{r}
+stargazer::stargazer(VIF)
+```
+
+
+```{r}
+par(mfrow=c(3,3))
+for (j in 1:9){
+  boxplot(X[,j] ~Y, col="cyan", names=levels(Y), ylab=names(X)[j])
+}
+rm(j)
+```
+```{r}
+rm(X, Y)
+```
+
+
+# Partie 2 : 
+
+```{r}
+# Pour que nous ayons tous le meme al´ea.
+RNGkind(sample.kind = "Rounding")
+set.seed(111)
+# V´erifier que vous obtenez la m^eme s´erie de nombres
+sample(1:10, 5, replace=T)
+```
+
+
+```{r}
+# Construction des ´echantillons d’apprentissage et de test
+set.seed(1111) # initialisation du g´en´erateur
+# Extraction des ´echantillons
+test.ratio = 0.25 # part de l’´echantillon test
+npop = nrow(data) # nombre de lignes dans les donn´ees
+nvar = ncol(data) # nombre de colonnes
+ntest = ceiling(npop*test.ratio) # taille de l’´echantillon test
+testi = sample(1:npop,ntest) # indices de l’´echantillon test
+appri = setdiff(1:npop,testi) # indices compl´ementaires de l’´echant. d’apprentissage
+# Construction des ´echantillons
+dataApp = data[appri,] # construction de l’´echantillon d’apprentissage
+dataTest = data[testi,] # construction de l’´echantillon test
+```
+
+
+```{r}
+# Centrage et R´eduction des donn´ees
+# DataApp
+n.app = length(dataApp$Y)
+m = apply(dataApp, 2, mean)
+ec = apply(dataApp, 2, sd) * sqrt((n.app-1)/n.app)
+# Centrage et r´eduction de Eapp et Etest
+for(j in 2:nvar){
+dataApp[,j] = (dataApp[,j] - m[j])/ec[j]
+dataTest[,j] = (dataTest[,j] - m[j])/ec[j]
+}
+```
+
+
+```{r}
+rm(test.ratio, testi, npop, ntest, appri, ec, j, m, n.app, nvar)
+```
+
+
+# Partie 3
+## Modèle Complet
+
+```{r}
+library(glmnet)
+```
+
+
+```{r}
+?glm
+```
+
+```{r}
+mod.glm.c = glm(Y ~ ., family = binomial, data= dataApp)
+```
+
+```{r}
+summary(mod.glm.c)
+```
+
+
+
+```{r}
+beta.glm.c = mod.glm.c$coef
+```
+
+
+## Modèle réduit
+
+-Pas a pas descendante
+
+```{r}
+Noms = c("R32", "R21", "R19", "R11", "R18", "R24", "R6", "R7", "R5", "R2", "R4", "R37", "R30", "R22")
+```
+
+
+```{r}
+mod.glm.r = glm(Y ~. -R32 - R21 - R19 -R11 -R18 - R24 -R6 -R7 -R5 - R2 - R4 -R37-R30-R22, family = binomial, data= dataApp)
+```
+
+```{r}
+summary(mod.glm.r)
+```
+
+
+```{r}
+beta.glm.r = mod.glm.r$coef
+coeffi = beta.glm.c
+coeffi[Noms] = 0
+coeffi[names(beta.glm.r)] = beta.glm.r
+beta.glm.r = coeffi
+```
+
+```{r}
+# Comparaison des coefficients
+round(cbind(beta.glm.c, beta.glm.r), 2)
+```
+
+
+```{r}
+deviance(mod.glm.c)
+AIC(mod.glm.c)
+deviance(mod.glm.r)
+AIC(mod.glm.r)
+```
+
+### Performance des deux modèles 
+
+```{r}
+# Fonction score
+score = function(y, ychap){
+result = table(y, ychap)
+sensi = result[1,1] / (result[1,2] + result[1,1])
+speci = result[2,2] / (result[2,1] + result[2,2])
+tauxClass = 1 - (result[1,2] + result[2,1]) / sum(result)
+Sc = c(tauxClass, sensi, speci) * 100
+names(Sc) = c("Taux bons Class.", "Sensibilit´e", "Sp´ecificit´e")
+score = round(Sc,2)
+}
+```
+
+
+```{r}
+y.app = dataApp[,1]
+y.glmc = ifelse(predict(mod.glm.c,type="response", data=dataApp)>0.5,1,0)
+table(y.app, y.glmc)
+print(score(y.app, y.glmc))
+```
+
+
+```{r}
+y.test = dataTest[,1]
+yt.glmc = ifelse(predict(mod.glm.c,type="response", newdata=dataTest)>0.5,1,0)
+table(y.test, yt.glmc)
+print(score(y.test, yt.glmc))
+```
+
+--> Sur le modèle réduit
+
+
+```{r}
+# sur Eapp
+y.glmr =  ifelse(predict(mod.glm.r,type="response", data= dataApp)>0.5,1,0)
+table(y.app, y.glmr)
+print(score(y.app, y.glmr))
+
+```
+
+```{r}
+# sur Etest
+yt.glm.r = ifelse(predict(mod.glm.r,type="response", newdata=dataTest)>0.5,1,0)
+table(y.test, yt.glm.r)
+print(score(y.test, yt.glm.r))
+```
+
+```{r}
+scorem = function(y, ypred, noms.model){
+  npred = ncol(ypred)
+  SC = NULL
+  for (j in 1:npred){
+	SC = cbind(SC, score(y, ypred[,j]))
+  }
+  colnames(SC) = noms.model 
+  scorem = SC
+}
+```
+
+
+```{r}
+# Sur Eapp
+y.pred = cbind(y.glmc, y.glmr)
+noms = c("GLMc", "GLMr")
+print(scorem(y.app, y.pred, noms))
+rm(noms, y.pred)
+```
+
+
+```{r}
+table((y.app==y.glmc),(y.app==y.glmr))
+mcnemar.test(table((y.app==y.glmc),(y.app==y.glmr)))
+```
+
+
+--> Modèle sans R32
+
+```{r}
+mod.glm.r_r32 = glm(Y ~. -R32, family = binomial, data= dataApp)
+summary(mod.glm.r_r32)
+```
+
+```{r}
+summary(mod.glm.c)
+```
+
+
+```{r}
+#Suppression des éléments unitiles
+rm(mod.glm.c, mod.glm.r, Noms, coeffi, y.glmc, yt.glmc, y.glmr, yt.glm.r, mod.glm.r_r32)
+```
+
+
+
+# Partie 4 : Ridge
+
+
+```{r}
+library(glmnet)
+help(glmnet)
+```
+
+
+-->  Préparation des données
+
+```{r}
+xApp = as.matrix(dataApp[,-1])
+yApp = dataApp[,1]
+```
+
+
+
+```{r}
+# Recherche du lambda optimal par validation croisée par blocs
+# Evolution du taux de mauvais classement en fonction de log(lambda)
+cvridge = cv.glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=0,nlambda = 100, type.measure = "class")
+plot(cvridge)
+```
+
+
+```{r}
+# choix du lambda optimal : selon les auteurs, il faut choisir lambda.1se
+lambda = cvridge$lambda.1se
+lambda
+```
+
+
+
+```{r}
+#construction du modèle
+mod.glm.ridge = glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=0,lambda = c(lambda))
+```
+
+
+
+```{r}
+# Stockage des coefficients  estimés
+beta.glm.ridge = coef(mod.glm.ridge, s=cvridge$lambda.1se)
+round(cbind(beta.glm.c, beta.glm.r, beta.glm.ridge=as.numeric(beta.glm.ridge)), 2)
+```
+
+
+
+```{r}
+# Etude des performances sur Eapp
+y.ridge = predict(mod.glm.ridge,xApp,type="class",s=c(lambda))
+table(y.app, y.ridge)
+print(score(y.app, y.ridge))
+```
+
+
+
+
+```{r}
+# Performances sur Etest
+xTest = as.matrix(dataTest[,-1])
+yTest = dataTest[,1]
+yt.ridge = predict(mod.glm.ridge,xTest,type="class",s=c(lambda))
+table(y.test, yt.ridge)
+print(score(y.test, yt.ridge))
+```
+
+```{r}
+rm(cvridge, lambda, mod.glm.ridge, y.ridge, yt.ridge)
+```
+
+
+
+
+# Partie 5 : On souhaite introduire une régularisation de type LASSO sur les coefficients estim´es du modèle et ´etudier son effet sur les performances du mod`ele ainsi ajust´e.
+
+
+```{r}
+#regression logistique lasso
+mod.tmp = glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=1)
+# visualisation des chemins de régularisation
+plot(mod.tmp)
+```
+
+```{r}
+coef(mod.tmp)
+#choix du parametre par validation croisee
+cvlasso = cv.glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=1,nlambda = 100, type.measure = "class")
+plot(cvlasso)
+lambda = cvlasso$lambda.1se
+```
+
+
+
+
+```{r}
+#construction du modèle
+mod.glm.lasso = glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=1,lambda = c(lambda)) 
+beta.glm.lasso = coef(mod.glm.lasso, s=cvlasso$lambda.1se)
+```
+
+`
+
+
+```{r}
+# Etude des performances
+y.lasso = predict(mod.glm.lasso,xApp,type="class",s=c(lambda))
+table(y.app, y.lasso)
+print(score(y.app, y.lasso))
+```
+
+```{r}
+yt.lasso = predict(mod.glm.lasso,xTest,type="class",s=c(lambda))
+table(y.test, yt.lasso)
+print(score(y.test, yt.lasso))
+```
+
+
+
+
+
+```{r}
+# Coefficients des modèles :
+coeffs = round(cbind(beta.glm.c, beta.glm.r, beta.glm.ridge=as.numeric(beta.glm.ridge), beta.glm.lasso=as.numeric(beta.glm.lasso)), 2)
+dimnames(coeffs)[[2]] = c("GLMc","GLMr","Ridge","LASSO")
+print(coeffs)
+```
+
+```{r}
+rm(mod.tmp, cvlasso, lambda, mod.glm.lasso, y.lasso, yt.lasso, coeffs)
+```
+
+
+## Elastic Net 
+
+```{r}
+alpha.eln = seq(0.1 ,0.9,0.1)
+#grida = 10^seq(10,-2,length=100)
+```
+
+
+
+```{r}
+mod.eln = lapply(alpha.eln, function(a) {
+  
+  cv.glmnet(xApp, yApp, alpha = a, nfolds = 10)
+  
+})
+```
+
+
+```{r}
+mod.eln
+```
+
+
+
+
+# Recherche du meilleur alpha qui donne le meilleur lambda
+
+
+# Extraire l'erreur minimale et les lambdas pour chaque alpha
+
+```{r}
+results = lapply(mod.eln, function(m) {
+  
+  list(min_mse = min(m$cvm), lambda_min = m$lambda.min, lambda_1se = m$lambda.1se)
+  
+})
+
+results = lapply(1:length(mod.eln), function(i) {
+  
+  list(alpha = alpha.eln[i],
+       
+       min_mse = min(mod.eln[[i]]$cvm),
+       
+       lambda_min = mod.eln[[i]]$lambda.min,
+       
+       lambda_1se = mod.eln[[i]]$lambda.1se)
+  
+})
+
+results_df = do.call(rbind, results)
+```
+
+
+```{r}
+results_df
+```
+
+```{r}
+xtable(results_df, digits = 4)
+```
+
+
+
+# Trouver le meilleur alpha (celui avec l'erreur minimale)
+
+```{r}
+best_alpha_index = which.min(sapply(results, function(x) x$min_mse))
+
+best_alpha = alpha.eln[best_alpha_index]
+```
+
+
+
+
+```{r}
+print(results_df)
+
+print(paste("Le meilleur alpha est :", best_alpha))
+```
+
+
+#Modèle final
+
+```{r}
+model.eln = glmnet(xApp,yApp,family="binomial",standardize=TRUE,alpha=0.6,lambda = 0.05191485)
+```
+
+
+
+# Stockage des coefficients estim?s
+
+```{r}
+beta.eln = coef(model.eln, s = 0.05191485)
+```
+
+
+```{r}
+round(cbind(beta.glm.c, beta.glm.r, beta.glm.ridge, beta.glm.lasso, beta.eln), 2)
+```
+
+
+
+
+Les performances :
+
+--> Apprentissage
+
+```{r}
+y.eln = predict(model.eln, xApp, type="class",s = 0.05191485)
+table(y.app, y.eln)
+print(score(y.app, y.eln))
+```
+
+
+--> sur Etest
+
+```{r}
+yt.eln = predict(model.eln, xTest, type="class",s = 0.05191485)
+table(y.test, yt.eln)
+print(score(y.test, yt.eln))
+```
+
+```{r}
+rm(alpha.eln, grida, results, mod.eln, best_alpha, best_alpha_index, results_df, model.eln)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
